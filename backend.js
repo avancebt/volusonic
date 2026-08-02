@@ -94,33 +94,84 @@ function backend(log, config) {
     var defer = libQ.defer();
 
     var uri = config.get('server') + '/rest/' + query + '&' + config.get('auth');
-    unirest
-      .get(uri)
-      .strictSSL(false)
-      .end(function(response) {
-        if (response.ok) {
-          defer.resolve(response.body);
+    var parsedUrl = url.parse(uri);
+    var client = parsedUrl.protocol === 'https:' ? https : http;
+
+    var options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.path,
+      method: 'GET',
+      rejectUnauthorized: false
+    };
+
+    var req = client.request(options, function(res) {
+      var data = '';
+      res.on('data', function(chunk) {
+        data += chunk;
+      });
+      res.on('end', function() {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            var parsedData = JSON.parse(data);
+            defer.resolve(parsedData);
+          } catch (e) {
+            defer.resolve(data);
+          }
         } else {
-          defer.reject(new Error('submitQuery'));
+          defer.reject(new Error('submitQuery status: ' + res.statusCode));
         }
       });
+    });
+
+    req.on('error', function(err) {
+      defer.reject(err);
+    });
+
+    req.end();
     return defer.promise;
   };
+
   var getArtistArt = function(artist) {
     var self = this;
     var defer = libQ.defer();
 
     var uri = "https://us-central1-metavolumio.cloudfunctions.net/metas?artist=" + artist + "&mode=artistArt";
-    unirest
-      .get(uri)
-      .strictSSL(false)
-      .end(function(response) {
-        if (response.ok) {
-          defer.resolve(response.body);
+    var parsedUrl = url.parse(uri);
+    var client = parsedUrl.protocol === 'https:' ? https : http;
+
+    var options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.path,
+      method: 'GET',
+      rejectUnauthorized: false
+    };
+
+    var req = client.request(options, function(res) {
+      var data = '';
+      res.on('data', function(chunk) {
+        data += chunk;
+      });
+      res.on('end', function() {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            var parsedData = JSON.parse(data);
+            defer.resolve(parsedData);
+          } catch (e) {
+            defer.resolve(data);
+          }
         } else {
-          defer.reject(new Error('getArtistArt'));
+          defer.reject(new Error('getArtistArt status: ' + res.statusCode));
         }
       });
+    });
+
+    req.on('error', function(err) {
+      defer.reject(err);
+    });
+
+    req.end();
     return defer.promise;
   };
   return {

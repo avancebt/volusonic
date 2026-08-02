@@ -1470,29 +1470,6 @@ ControllerVolusonic.prototype.explodeUri = function(uri) {
       .fail(function() {
         defer.reject(new Error('explodeUri volusonic/radio'));
       });
-  } else if (uri.startsWith('volusonic/artists') && uriParts.length == 2) {
-    self._artist(id).then(function(artist) {
-      if ((artist.album !== undefined) || (artist.child !== undefined)) {
-        var container = "child";
-        if (self.config.get('ID3')) container = "album";
-        var proms = [];
-        artist[container].forEach(function(album) {
-          var alb = self._album(album.id);
-          var sg = "child";
-          if (self.config.get('ID3')) sg = "song";
-          alb.then(function(albData) {
-            albData[sg].forEach(function(song) {
-              items.push(self._getPlayable(song));
-            });
-          });
-          proms.push(alb);
-        });
-        libQ.all(proms)
-          .then(function() {
-            defer.resolve(items);
-          });
-      }
-    });
   } else if (uri.startsWith('volusonic/genres') && uriParts.length == 2) {
     command = 'getRandomSongs';
     params = 'genre=' + id + "&size=" + self.getSetting('listsSize');
@@ -1519,26 +1496,72 @@ ControllerVolusonic.prototype.explodeUri = function(uri) {
         defer.reject(new Error('explodeUri volusonic/index'));
       });
   } else {
-    command = 'getMusicDirectory';
-    if (self.config.get('ID3')) command = "getAlbum";
+    // Determine whether this is an artist page or an album page
+    var isArtist = false;
+    if (uri.startsWith('volusonic/artists') && id.length > 2) {
+      isArtist = true;
+    } else if (uri.startsWith('volusonic/favorites/artist')) {
+      isArtist = true;
+    }
 
-    container = 'directory';
-    if (self.config.get('ID3')) container = "album";
-
-    item = 'child';
-    if (self.config.get('ID3')) item = "song";
-
-    params = 'id=' + id;
-    self.backend.get(command, id, params)
-      .then(function(result) {
-        result['subsonic-response'][container][item].forEach(function(song) {
-          items.push(self._getPlayable(song));
-        });
-        defer.resolve(items);
-      })
-      .fail(function() {
-        defer.reject(new Error('explodeUri volusonic default'));
+    if (isArtist) {
+      self._artist(id).then(function(artist) {
+        if (artist && (artist.album !== undefined || artist.child !== undefined)) {
+          var container = self.config.get('ID3') ? "album" : "child";
+          var proms = [];
+          var albumsArray = Array.isArray(artist[container]) ? artist[container] : [artist[container]];
+          albumsArray.forEach(function(album) {
+            var alb = self._album(album.id);
+            var sg = self.config.get('ID3') ? "song" : "child";
+            alb.then(function(albData) {
+              if (albData && albData[sg]) {
+                var songsArray = Array.isArray(albData[sg]) ? albData[sg] : [albData[sg]];
+                songsArray.forEach(function(song) {
+                  items.push(self._getPlayable(song));
+                });
+              }
+            });
+            proms.push(alb);
+          });
+          libQ.all(proms)
+            .then(function() {
+              defer.resolve(items);
+            })
+            .fail(function() {
+              defer.reject(new Error('explodeUri artist albums'));
+            });
+        } else {
+          defer.resolve([]);
+        }
+      }).fail(function() {
+        defer.reject(new Error('explodeUri artist'));
       });
+    } else {
+      command = 'getMusicDirectory';
+      if (self.config.get('ID3')) command = "getAlbum";
+
+      var container = 'directory';
+      if (self.config.get('ID3')) container = "album";
+
+      var item = 'child';
+      if (self.config.get('ID3')) item = "song";
+
+      params = 'id=' + id;
+      self.backend.get(command, id, params)
+        .then(function(result) {
+          var data = result && result['subsonic-response'] && result['subsonic-response'][container];
+          if (data && data[item]) {
+            var songsArray = Array.isArray(data[item]) ? data[item] : [data[item]];
+            songsArray.forEach(function(song) {
+              items.push(self._getPlayable(song));
+            });
+          }
+          defer.resolve(items);
+        })
+        .fail(function() {
+          defer.reject(new Error('explodeUri volusonic default'));
+        });
+    }
   }
   return defer.promise;
 };
